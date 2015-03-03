@@ -1,0 +1,188 @@
+<!DOCTYPE html />
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" /> 
+
+    <style type="text/css">
+    body {
+        background-color: #202020;
+    }
+    #main {
+	    position: absolute;
+        width: 900px;
+        height: 675px;
+        top: 50%;
+        left: 50%;
+        margin-left: -450px;
+        margin-top: -337px;
+    }
+    #background {
+        position: absolute;
+        width: 900px;
+        z-index: 0;
+    }
+    #whiteboard {
+        position: absolute;
+        top: 37px;
+        left: 37px;
+        z-index: 1;
+    }
+    </style>
+
+    <script type="text/javascript" src="../scripts/jquery-1.6.2.min.js"></script>
+
+    <script type="text/javascript">
+        var _ws = null;
+        var _canvas = null;
+        var _dc = null;
+        var _down = false;
+        var _points = [];
+        var _x, _y;
+
+        $(document).ready(function () {
+            if (!window.WebSocket) {
+                alert("This browser doesn't support WebSockets");
+            }
+            else if (!document.createElement("canvas").getContext) {
+                alert("This browser doesn't support canvases");
+            }
+            else {
+                // Get a canvas and a drawing context
+                _canvas = document.getElementById("whiteboard");
+                _dc = _canvas.getContext("2d");
+
+                // Initialize the drawing context to produce thick lines
+                _dc.lineWidth = 16;
+                _dc.lineCap = "round";
+
+                // Register handlers for mouse events
+                $("#whiteboard").mousedown(onMouseDown);
+                $("#whiteboard").mousemove(onMouseMove);
+                $("#whiteboard").mouseup(onMouseUp);
+                //$("#whiteboard").mouseleave(onMouseUp);
+
+                // Connect to the WebSocket server
+                _ws = new WebSocket("ws://localhost:52692/services/ScribbleWebSocketHandler.ashx");
+                _ws.addEventListener("message", onMessageReceived, false);
+                _ws.addEventListener("close", onClose, false);
+                _ws.addEventListener("error", onError, false);
+            }
+        });
+
+        function onMouseDown(e) {
+            if (e.which == 1) {
+                var point = getCoords(e);
+                _points.push(point);
+                _down = true;
+            }
+        }
+
+        function onMouseMove(e) {
+            if (_down && e.which == 1) {
+                var point2 = getCoords(e);
+                var point1 = _points[_points.length - 1];
+                _dc.strokeStyle = "red";
+                drawLine(_dc, point1.x, point1.y, point2.x, point2.y);
+                _points.push(point2);
+            }
+        }
+
+        function onMouseUp(e) {
+            if (e.which == 1) {
+                transmitPoints(_points);
+                _points = [];
+                _down = false;
+            }
+        }
+
+        function getCoords(e) {
+            if (e.offsetX && e.offsetY) {
+                // All other browsers
+                return ({ x: e.offsetX, y: e.offsetY });
+            }
+            else {
+                // Firefox
+                var dx = 0;
+                var dy = 0;
+                var obj = e.target;
+
+                while (obj !== document) {
+                    dx += obj.offsetLeft;
+                    dy += obj.offsetTop;
+                    obj = obj.parentNode;
+                }
+
+                return ({ x: e.pageX - dx, y: e.pageY - dy });
+            }
+        }
+
+        function drawLine(dc, x1, y1, x2, y2) {
+            dc.beginPath();
+            dc.moveTo(x1, y1);
+            dc.lineTo(x2, y2);
+            dc.stroke();
+        }
+
+        function onMessageReceived(e) {
+            var points = decodePoints(e.data);
+
+            for (var i = 1; i < points.length; i++) {
+                _dc.strokeStyle = "blue";
+                drawLine(_dc, points[i - 1].x, points[i - 1].y, points[i].x, points[i].y);
+            }
+        }
+
+        function onClose(e) {
+            _ws = null;
+        }
+
+        function onError(e) {
+            alert("Error");
+        }
+
+        function transmitPoints(points) {
+            if (_ws != null && _ws.readyState == 1 && points.length > 0) {
+                _ws.send(encodePoints(points));
+            }
+        }
+
+        function encodePoints(points) {
+            var result = "";
+
+            for (var i = 0; i < points.length; i++) {
+                result += ("X=" + points[i].x.toString() + ",Y=" + points[i].y.toString() + ";");
+            }
+
+            return result;
+        }
+
+        function decodePoints(points) {
+            var result = [];
+            var coords = points.split(';');
+
+            for (var i = 0; i < coords.length; i++) {
+                var items = coords[i].split(",");
+
+                try {
+                    var x = parseInt(items[0].substring(2));
+                    var y = parseInt(items[1].substring(2));
+                    result.push({ x: x, y: y });
+                }
+                catch (ex) {
+                    // Do nothing
+                }
+            }
+
+            return result;
+        }
+    </script>
+</head>
+
+<body>
+    <div id="main">
+        <img id="background" src="../images/whiteboard.jpg" ondragstart="return false" alt="" />
+        <canvas id="whiteboard" width="825" height="600"></canvas>
+    </div>
+</body>
+</html>
